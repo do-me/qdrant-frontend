@@ -1,7 +1,7 @@
 # Qdrant Frontend
 A universal Qdrant table frontend based on transformers.js
 
-![image](https://github.com/do-me/qdrant-frontend/assets/47481567/aa123192-397a-4c7d-a48e-3d83f981f147)
+![image](https://github.com/do-me/qdrant-frontend/assets/47481567/2a89b77b-8298-488c-8718-2ad760f43fa6)
 
 ## Usage 
 Simply go to https://do-me.github.io/qdrant-frontend/ and type in your Qdrant URL: 

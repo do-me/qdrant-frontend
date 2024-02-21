@@ -1,5 +1,5 @@
 {
-  "name": "Qdrant Frontend",
+  "name": "qdrant-frontend",
   "version": "1.0.0",
   "description": "A universal Qdrant table frontend based on transformers.js",
   "main": "index.js",

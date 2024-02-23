@@ -14,6 +14,8 @@ let searchResults;
 let embedder;
 let loadedModelName = null;
 let quantizedFlag = true;
+let thisCollection;
+let lastCollection = "";
 
 // Function to update URL with form parameters
 function updateURL() {
@@ -60,14 +62,21 @@ function setFormInputsFromURL() {
     document.getElementById('quantizedToggle').checked = quantizedToggleParam === 'true';
 }
 
-// Call the function initially to set form inputs from URL parameters
-setFormInputsFromURL();
 
-// Add event listeners to form inputs to update URL
-const formInputs = document.querySelectorAll('.form-control, .form-check-input');
-formInputs.forEach(input => {
-    input.addEventListener('input', updateURL);
-});
+var URLModeHidden = document.getElementById("copyURLButton").hidden;
+
+if (URLModeHidden) {
+
+} else {
+    // Call the function initially to set form inputs from URL parameters
+    setFormInputsFromURL();
+
+    // Add event listeners to form inputs to update URL
+    const formInputs = document.querySelectorAll('.form-control, .form-check-input');
+    formInputs.forEach(input => {
+        input.addEventListener('input', updateURL);
+    });
+}
 
 async function loadModel(model, quantized = true) {
     if (model !== loadedModelName || quantized !== quantizedFlag) { // Check if model or quantized flag changed
@@ -78,7 +87,7 @@ async function loadModel(model, quantized = true) {
         embedder = await pipeline("feature-extraction", model, { quantized: quantized });
         loadedModelName = model;
         quantizedFlag = quantized; // Update quantized flag
-        console.log("Model loaded:", loadedModelName, " quantized: ", quantized );
+        console.log("Model loaded:", loadedModelName, " quantized: ", quantized);
     } else {
         console.log("Model already loaded:", loadedModelName, " quantized: ", quantized);
     }
@@ -123,7 +132,8 @@ async function searchPoints(collectionName, vectorData, filter, limit, offset, w
         body: reqBody,
     };
 
-    const response = await fetch(`${document.getElementById("QdrantURL").value}/points/search`, requestOptions);
+    thisCollection = document.getElementById("QdrantURL").value
+    const response = await fetch(`${thisCollection}/points/search`, requestOptions);
     const data = await response.json();
 
     return data;
@@ -133,15 +143,16 @@ async function searchPoints(collectionName, vectorData, filter, limit, offset, w
 let gridApi;
 let gridOptions;
 
+
 async function sendRequest() {
     try {
         gridApi.showLoadingOverlay();
-    } 
+    }
     catch (error) {
     }
     loadingElement.style.display = "";
     submit_button_text.textContent = "Loading results...";
-    submitButton.setAttribute("disabled","");
+    submitButton.setAttribute("disabled", "");
 
     let inputText = document.getElementById("inputText").value.trim();
     if (inputText !== "") {
@@ -149,8 +160,8 @@ async function sendRequest() {
         const collectionName = "test_collection";
         var vectorData = Array.from(output["data"]);
         const filter = {};
-        const limit =  parseInt(document.getElementById("QdrantLimit").value);
-        const offset =  0;
+        const limit = parseInt(document.getElementById("QdrantLimit").value);
+        const offset = 0;
         const withPayload = true;
         const withVector = false;
         const scoreThreshold = null;
@@ -168,11 +179,16 @@ async function sendRequest() {
             }
 
             // Custom cell renderer
-            function hyperlinkRenderer(params) {
-                if (isHyperlink(params.value)) {
-                    return `<a href="${params.value}" target="_blank">${params.value}</a>`;
+            function customRenderer(params) {
+                const nestedKey = Object.keys(params.data.payload).find(key => typeof params.data.payload[key] === 'object');
+                const value = params.data.payload[params.colDef.field.split('.')[1]];
+
+                if (params.colDef.field.endsWith(`.${nestedKey}`)) {
+                    return typeof value === 'object' ? JSON.stringify(value) : value; // Render nested element as string
+                } else if (isHyperlink(value)) {
+                    return `<a href="${value}" target="_blank">${value}</a>`;
                 } else {
-                    return params.value;
+                    return value;
                 }
             }
 
@@ -183,21 +199,40 @@ async function sendRequest() {
                 ...payloadKeys.map(key => ({
                     headerName: key,
                     field: `payload.${key}`,
-                    maxWidth:   300,
+                    maxWidth: 300,
                     editable: true,
                     valueGetter: params => params.data.payload[key],
                     tooltipValueGetter: (params) => params.value,
                     filter: true,
                     autoHeight: true,
-                    cellRenderer: hyperlinkRenderer // Use the custom cell renderer
+                    cellRenderer: customRenderer // Use the custom cell renderer
                 })),
             ];
 
+
             // Check if the grid has already been initialized
-            if (gridApi) {
+            if (gridApi && thisCollection === lastCollection) {
                 // If the grid is already initialized, update the row data
                 gridApi.setRowData(searchResults.result);
             } else {
+
+                try {
+                    //gridOptions.api.destroy()
+                    //document.getElementById("myGrid").innerHTML = "";
+                    if (thisCollection !== lastCollection) {
+                        // update column headers if needed
+                        gridApi.updateGridOptions({ columnDefs: columnDefs })
+                    }
+                    gridApi.setRowData(searchResults.result);
+                    loadingElement.style.display = "none";
+                    submit_button_text.textContent = "Submit";
+                    submitButton.removeAttribute("disabled");
+
+                    lastCollection = thisCollection
+                    return
+                }
+                catch { }
+
                 // If the grid is not initialized, create the grid
                 gridOptions = {
                     autoSizeStrategy: {
@@ -213,7 +248,7 @@ async function sendRequest() {
                         '<span aria-live="polite" aria-atomic="true" style="padding: 10px; border: 2px solid #666; background: #55AA77;">This is a custom \'no rows\' overlay</span>',
 
                 };
-                
+
                 gridApi = createGrid(eGridDiv, gridOptions);
                 document.getElementById("exportDropdown").removeAttribute("disabled")
                 document.getElementById("quickFilter").style.display = "";
@@ -223,6 +258,27 @@ async function sendRequest() {
             loadingElement.style.display = "none";
             submit_button_text.textContent = "Submit";
             submitButton.removeAttribute("disabled");
+
+            // on first click add the quick filter listener
+            if (lastCollection == "" && !filterTextBox._listenerInitialized) {
+                function onFilterTextBoxChanged() {
+                    gridApi.setGridOption(
+                        'quickFilterText',
+                        document.getElementById('filter-text-box').value
+                    );
+                }
+
+                filterTextBox.addEventListener('input', () => {
+                    onFilterTextBoxChanged();
+                });
+
+                // Mark listener as initialized
+                filterTextBox._listenerInitialized = true;
+                console.log("filter init")
+            }
+
+
+            lastCollection = thisCollection
 
 
         } catch (error) {
@@ -239,13 +295,13 @@ async function exportData(data, format) {
             console.error('jsonData is not an array');
             return jsonData;
         }
-        
+
         // Check if every element in the array is an object
         if (!jsonData.every(item => typeof item === 'object')) {
             console.error('One or more elements in jsonData are not objects');
             return jsonData;
         }
-        
+
         // Map over the array and flatten the payload object
         return jsonData.map(item => {
             const { payload, ...rest } = item;
@@ -260,30 +316,30 @@ async function exportData(data, format) {
     if (format === 'excel') {
         // Create a new workbook
         const workbook = XLSX.utils.book_new();
-      
+
         // Convert JSON to worksheet
         const worksheet = XLSX.utils.json_to_sheet(jsonData);
-      
+
         // Add the worksheet to the workbook
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
-      
+
         // Generate a blob from the workbook
         const excelBlob = new Blob([XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })], {
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         });
-      
+
         // Create a temporary URL for the blob
         const excelUrl = URL.createObjectURL(excelBlob);
-      
+
         // Create a link element
         const link = document.createElement('a');
         link.href = excelUrl;
         link.download = `${document.getElementById("inputText").value.trim()}.xlsx`;
-      
+
         // Append the link to the document body and trigger the download
         document.body.appendChild(link);
         link.click();
-      
+
         // Clean up
         URL.revokeObjectURL(excelUrl);
         document.body.removeChild(link);
@@ -298,44 +354,44 @@ async function exportData(data, format) {
                 return value;
             }).join(',');
         }).join('\n');
-        
+
         // Create a blob from the CSV content
         const csvBlob = new Blob([csvContent], { type: 'text/csv' });
         const csvUrl = URL.createObjectURL(csvBlob);
-      
+
         // Create a link element
         const link = document.createElement('a');
         link.href = csvUrl;
         link.download = `${document.getElementById("inputText").value.trim()}.csv`;
-      
+
         // Append the link to the document body and trigger the download
         document.body.appendChild(link);
         link.click();
-      
+
         // Clean up
         URL.revokeObjectURL(csvUrl);
         document.body.removeChild(link);
-    
-    
+
+
     } else if (format === 'json') {
         // Convert JSON to string
         const jsonString = JSON.stringify(jsonData, null, 2);
-        
+
         // Create a blob from the JSON string
         const jsonBlob = new Blob([jsonString], { type: 'application/json' });
-      
+
         // Create a temporary URL for the blob
         const jsonUrl = URL.createObjectURL(jsonBlob);
-      
+
         // Create a link element
         const link = document.createElement('a');
         link.href = jsonUrl;
         link.download = `${document.getElementById("inputText").value.trim()}.json`;
-      
+
         // Append the link to the document body and trigger the download
         document.body.appendChild(link);
         link.click();
-      
+
         // Clean up
         URL.revokeObjectURL(jsonUrl);
         document.body.removeChild(link);
@@ -344,26 +400,15 @@ async function exportData(data, format) {
     }
 }
 
-function onFilterTextBoxChanged () {
-    gridApi.setGridOption(
-      'quickFilterText',
-      document.getElementById('filter-text-box').value
-    );
-  }
-
-filterTextBox.addEventListener('input', () => {
-    onFilterTextBoxChanged();
-});
-
-document.getElementById('copyURLButton').addEventListener('click', function() {
+document.getElementById('copyURLButton').addEventListener('click', function () {
     var urlToCopy = window.location.href;
-    
+
     navigator.clipboard.writeText(urlToCopy)
-        .then(function() {
+        .then(function () {
             console.log('URL copied to clipboard successfully: ' + urlToCopy);
             // You can also show a success message here if needed
         })
-        .catch(function(err) {
+        .catch(function (err) {
             console.error('Failed to copy URL to clipboard: ', err);
             // You can also show an error message here if needed
         });

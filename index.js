@@ -17,6 +17,8 @@ let quantizedFlag = true;
 let thisCollection;
 let lastCollection = "";
 
+const special_vector = [] // A special vector can be hardcoded here, so that instead of calculating it with the model, this vector is used. Will be displayed bold. 
+
 // Function to update URL with form parameters
 function updateURL() {
     const qdrantURL = document.getElementById('QdrantURL').value;
@@ -60,8 +62,6 @@ function updateURL() {
     window.history.replaceState({}, '', `?${params}`);
 }
 
-
-
 function setFormInputsFromURL() {
     // Parse the current URL
     const url = new URL(window.location.href);
@@ -94,7 +94,20 @@ function setFormInputsFromURL() {
         // Directly update the first row if it's part of the queries
         if (queries.length > 0 && queries[0].hasOwnProperty('inputText')) {
             const firstQuery = queries.shift(); // Remove the first query from the array
-            document.getElementById('inputText0').value = firstQuery.inputText || '';
+
+            const inputText0 = document.getElementById('inputText0')
+            inputText0.value = firstQuery.inputText || '';
+
+            if (inputText0.value === "special_vector") {
+                // If the condition is met, apply italic text and grey background
+                inputText0.style.fontStyle = 'italic';
+                //event.target.style.backgroundColor = 'grey';
+            } else {
+                // If the condition is not met, remove italic text and grey background
+                inputText0.style.fontStyle = 'normal';
+                //event.target.style.backgroundColor = '';
+            }
+
             document.getElementById('weight0').value = firstQuery.queryWeight || '';
             document.getElementById('activeToggle0').checked = firstQuery.activeState;
         }
@@ -125,7 +138,6 @@ function removeRow(rowToRemove) {
     }
 }
 
-<<<<<<< HEAD
 function addRow(queryData, rowNumber) {
     const originalRow = document.getElementById('initialQueryContainer');
     const clone = originalRow.cloneNode(true);
@@ -140,31 +152,34 @@ function addRow(queryData, rowNumber) {
 
     // Set values from queryData
     clone.querySelector('.inputText').value = queryData.inputText || '';
+
+    // Set values from queryData
+    const inputTextX = clone.querySelector('.inputText')
+    inputTextX.value = queryData.inputText || '';
+
+    if (inputTextX.value === "special_vector") {
+        // If the condition is met, apply italic text and grey background
+        inputTextX.style.fontStyle = 'italic';
+        //event.target.style.backgroundColor = 'grey';
+    } else {
+        // If the condition is not met, remove italic text and grey background
+        inputTextX.style.fontStyle = 'normal';
+        //event.target.style.backgroundColor = '';
+    }
+
+
     clone.querySelector('.queryWeight').value = queryData.queryWeight || '';
     clone.querySelector('.activeToggle').checked = queryData.activeState;
 
     const minusButton = clone.querySelector('.queryButton');
-    minusButton.textContent = '➖'; // Replace plus emoji with minus emoji
+    // must use SVG here as emoji create problems with npm
+    minusButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0  0  24  24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-plus">
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>`
     minusButton.title = 'Remove query';
     minusButton.addEventListener('click', function () { removeRow(clone); }); // Attach event listener to the minus button
 
     document.getElementById('queryRowsContainer').appendChild(clone);
-=======
-
-var URLModeHidden = document.getElementById("copyURLButton").hidden;
-
-if (URLModeHidden) {
-
-} else {
-    // Call the function initially to set form inputs from URL parameters
-    setFormInputsFromURL();
-
-    // Add event listeners to form inputs to update URL
-    const formInputs = document.querySelectorAll('.form-control, .form-check-input');
-    formInputs.forEach(input => {
-        input.addEventListener('input', updateURL);
-    });
->>>>>>> 74e01e38c23b2aca8fdb6187b5a17054cbc6c0ea
 }
 
 async function loadModel(model, quantized = true) {
@@ -249,9 +264,15 @@ function getQueryTextsAndWeigths() {
 }
 
 async function processInputText(inputText) {
-    const output = await embedder(inputText, { pooling: 'mean', normalize: true });
-    const vectorArray = Array.from(output["data"]);
-    return vectorArray;
+
+    if (inputText == "special_vector") {
+        return special_vector
+    }
+    else {
+        const output = await embedder(inputText, { pooling: 'mean', normalize: true });
+        const vectorArray = Array.from(output["data"]);
+        return vectorArray;
+    }
 }
 
 async function processQueries() {
@@ -292,12 +313,9 @@ async function sendRequest() {
     loadingElement.style.display = "";
     submit_button_text.textContent = "Loading results...";
     submitButton.setAttribute("disabled", "");
-<<<<<<< HEAD
 
     let inputText = document.getElementsByClassName("inputText")[0].value.trim();
     //const trimmedInputTexts = Array.from(document.getElementsByClassName("inputText")).map(input => input.value.trim());
-=======
->>>>>>> 74e01e38c23b2aca8fdb6187b5a17054cbc6c0ea
 
     if (inputText !== "") {
         //let output = await embedder(inputText, { pooling: 'mean', normalize: true });
@@ -419,7 +437,6 @@ async function sendRequest() {
                 // Mark listener as initialized
                 filterTextBox._listenerInitialized = true;
 
-                console.log("filter init")
             }
 
 
@@ -577,7 +594,9 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         const minusButton = clone.querySelector('.queryButton');
-        minusButton.textContent = '➖'; // Replace plus emoji with minus emoji
+        minusButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0  0  24  24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-plus">
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>`
         minusButton.title = 'Remove query';
         minusButton.addEventListener('click', function () { removeRow(clone); }); // Attach event listener to the minus button
 
@@ -605,6 +624,19 @@ if (URLModeHidden) {
             if (event.target.matches('.form-control, .form-check-input')) {
                 updateURL(event);
             }
+
+            if (event.target.matches('.inputText')) {
+                // Check if the trimmed value of the input is "special_vector"
+                if (event.target.value.trim() === "special_vector") {
+                    // If the condition is met, apply italic text and grey background
+                    event.target.style.fontStyle = 'italic';
+                    //event.target.style.backgroundColor = 'grey';
+                } else {
+                    // If the condition is not met, remove italic text and grey background
+                    event.target.style.fontStyle = 'normal';
+                    //event.target.style.backgroundColor = '';
+                }
+            }
         });
 
         document.body.addEventListener('click', function (event) {
@@ -612,8 +644,6 @@ if (URLModeHidden) {
                 updateURL(event);
             }
         });
-        
 
-        
     });
 }

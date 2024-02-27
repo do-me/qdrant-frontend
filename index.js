@@ -20,14 +20,38 @@ let lastCollection = "";
 // Function to update URL with form parameters
 function updateURL() {
     const qdrantURL = document.getElementById('QdrantURL').value;
-    const inputText = document.getElementById('inputText').value;
     const qdrantLimit = document.getElementById('QdrantLimit').value;
     const hfModel = document.getElementById('HFModel').value;
     const quantizedToggle = document.getElementById('quantizedToggle').checked;
 
+    // Select all query containers
+    const queryContainers = document.querySelectorAll('.queryContainer');
+    let queries = [];
+
+    queryContainers.forEach((container, index) => {
+        // Adjusted selectors to match the updated HTML
+        const inputText = container.querySelector('.inputText').value;
+        const queryWeight = container.querySelector('.queryWeight').value;
+        const activeState = container.querySelector(`.activeToggle`).checked;
+
+        // Create an object for each query with its parameters and index
+        const query = {
+            index, // Add the index of the query row
+            inputText,
+            queryWeight,
+            activeState
+        };
+
+        // Add the query object to the queries array
+        queries.push(query);
+    });
+
+    // Convert the queries array to a string for the URL parameters
+    const queriesString = JSON.stringify(queries);
+
     const params = new URLSearchParams({
         qdrantURL,
-        inputText,
+        queries: queriesString, // This now includes the index of each query row
         qdrantLimit,
         hfModel,
         quantizedToggle
@@ -36,9 +60,12 @@ function updateURL() {
     window.history.replaceState({}, '', `?${params}`);
 }
 
-// Function to set form input fields based on URL parameters
+
+
 function setFormInputsFromURL() {
-    const urlParams = new URLSearchParams(window.location.search);
+    // Parse the current URL
+    const url = new URL(window.location.href);
+    const urlParams = url.searchParams;
 
     // Check if there are any parameters in the URL
     if (urlParams.toString() === "") {
@@ -49,9 +76,6 @@ function setFormInputsFromURL() {
     const qdrantURLParam = urlParams.get('qdrantURL');
     document.getElementById('QdrantURL').value = qdrantURLParam || '';
 
-    const inputTextParam = urlParams.get('inputText');
-    document.getElementById('inputText').value = inputTextParam || '';
-
     const qdrantLimitParam = urlParams.get('qdrantLimit');
     document.getElementById('QdrantLimit').value = qdrantLimitParam || '';
 
@@ -60,8 +84,72 @@ function setFormInputsFromURL() {
 
     const quantizedToggleParam = urlParams.get('quantizedToggle');
     document.getElementById('quantizedToggle').checked = quantizedToggleParam === 'true';
+
+    // Handle query parameters
+    const queriesParam = urlParams.get('queries');
+    if (queriesParam) {
+        const queries = JSON.parse(queriesParam);
+        let rowCount = 1; // Reset row count for dynamic rows
+
+        // Directly update the first row if it's part of the queries
+        if (queries.length > 0 && queries[0].hasOwnProperty('inputText')) {
+            const firstQuery = queries.shift(); // Remove the first query from the array
+            document.getElementById('inputText0').value = firstQuery.inputText || '';
+            document.getElementById('weight0').value = firstQuery.queryWeight || '';
+            document.getElementById('activeToggle0').checked = firstQuery.activeState;
+        }
+
+        // Remove existing query rows
+        //const queryRowsContainer = document.getElementById('queryRowsContainer');
+        // Assuming you want to clear all existing dynamic rows before adding new ones
+        //queryRowsContainer.innerHTML = '';
+
+        // Dynamically create query rows based on URL parameters
+        queries.forEach((query, index) => {
+            addRow(query, index + 1); // Pass query data and the new row number
+        });
+    }
 }
 
+// Function to remove a row
+function removeRow(rowToRemove) {
+    rowToRemove.remove();
+    // Adjust IDs of all remaining rows
+    let remainingRows = document.querySelectorAll('.queryContainer');
+    for (let i = 0; i < remainingRows.length; i++) {
+        remainingRows[i].querySelectorAll('input, button').forEach(function (element) {
+            const currentId = element.id;
+            const newId = currentId.replace(/\d+$/, i + 1); // Adjust the ID to reflect the new row count
+            element.id = newId;
+        });
+    }
+}
+
+<<<<<<< HEAD
+function addRow(queryData, rowNumber) {
+    const originalRow = document.getElementById('initialQueryContainer');
+    const clone = originalRow.cloneNode(true);
+    clone.id = 'queryContainer' + rowNumber; // Adjust the ID of the cloned row
+
+    // Adjust IDs of all elements within the cloned row
+    clone.querySelectorAll('input, button').forEach(function (element) {
+        const currentId = element.id;
+        const newId = currentId.replace(/\d+$/, rowNumber); // Replace the last digit(s) with the current rowNumber
+        element.id = newId;
+    });
+
+    // Set values from queryData
+    clone.querySelector('.inputText').value = queryData.inputText || '';
+    clone.querySelector('.queryWeight').value = queryData.queryWeight || '';
+    clone.querySelector('.activeToggle').checked = queryData.activeState;
+
+    const minusButton = clone.querySelector('.queryButton');
+    minusButton.textContent = '➖'; // Replace plus emoji with minus emoji
+    minusButton.title = 'Remove query';
+    minusButton.addEventListener('click', function () { removeRow(clone); }); // Attach event listener to the minus button
+
+    document.getElementById('queryRowsContainer').appendChild(clone);
+=======
 
 var URLModeHidden = document.getElementById("copyURLButton").hidden;
 
@@ -76,6 +164,7 @@ if (URLModeHidden) {
     formInputs.forEach(input => {
         input.addEventListener('input', updateURL);
     });
+>>>>>>> 74e01e38c23b2aca8fdb6187b5a17054cbc6c0ea
 }
 
 async function loadModel(model, quantized = true) {
@@ -139,6 +228,56 @@ async function searchPoints(collectionName, vectorData, filter, limit, offset, w
     return data;
 }
 
+
+function getQueryTextsAndWeigths() {
+    const queryContainers = document.querySelectorAll('.queryContainer');
+
+    const activeQueries = Array.from(queryContainers).filter(container => {
+        const activeToggle = container.querySelector('.activeToggle');
+        return activeToggle.checked;
+    }).map(container => {
+        const inputText = container.querySelector('.inputText').value.trim();
+        const weight = container.querySelector('.queryWeight').value;
+        return { inputText, weight };
+    });
+
+    const jsonObject = JSON.stringify(activeQueries);
+
+    console.log(jsonObject); // Logs the JSON string of active queries
+
+    return jsonObject
+}
+
+async function processInputText(inputText) {
+    const output = await embedder(inputText, { pooling: 'mean', normalize: true });
+    const vectorArray = Array.from(output["data"]);
+    return vectorArray;
+}
+
+async function processQueries() {
+    const jsonObject = getQueryTextsAndWeigths();
+    const queries = JSON.parse(jsonObject);
+
+    // Step  1: Calculate the vector for each text
+    const vectors = await Promise.all(queries.map(async query => {
+        const { inputText } = query
+        return await processInputText(inputText)
+    }));
+
+    // Step  2: Calculate the weighted average vector
+    const weightedAverageVector = vectors.reduce((acc, vector, index) => {
+        const weight = queries[index].weight;
+        return acc.map((val, i) => val + vector[i] * weight);
+    }, new Array(vectors[0].length).fill(0));
+
+    // Normalize the weighted average vector
+    const magnitude = Math.sqrt(weightedAverageVector.reduce((sum, val) => sum + val * val, 0));
+    const normalizedWeightedAverageVector = weightedAverageVector.map(val => val / magnitude);
+
+    console.log(normalizedWeightedAverageVector); // Logs the normalized weighted average vector
+    return normalizedWeightedAverageVector
+}
+
 // Define global variables for the grid API and options
 let gridApi;
 let gridOptions;
@@ -153,12 +292,17 @@ async function sendRequest() {
     loadingElement.style.display = "";
     submit_button_text.textContent = "Loading results...";
     submitButton.setAttribute("disabled", "");
+<<<<<<< HEAD
 
-    let inputText = document.getElementById("inputText").value.trim();
+    let inputText = document.getElementsByClassName("inputText")[0].value.trim();
+    //const trimmedInputTexts = Array.from(document.getElementsByClassName("inputText")).map(input => input.value.trim());
+=======
+>>>>>>> 74e01e38c23b2aca8fdb6187b5a17054cbc6c0ea
+
     if (inputText !== "") {
-        let output = await embedder(inputText, { pooling: 'mean', normalize: true });
+        //let output = await embedder(inputText, { pooling: 'mean', normalize: true });
         const collectionName = "test_collection";
-        var vectorData = Array.from(output["data"]);
+        const vectorData = await processQueries();//Array.from(output["data"]);
         const filter = {};
         const limit = parseInt(document.getElementById("QdrantLimit").value);
         const offset = 0;
@@ -274,6 +418,7 @@ async function sendRequest() {
 
                 // Mark listener as initialized
                 filterTextBox._listenerInitialized = true;
+
                 console.log("filter init")
             }
 
@@ -413,3 +558,62 @@ document.getElementById('copyURLButton').addEventListener('click', function () {
             // You can also show an error message here if needed
         });
 });
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Initialize a counter for the current row count
+    let rowCount = 1; // Assuming the initial row is already present
+
+    // Function to clone the row and replace the plus button with a minus button
+    function TaddRow() {
+        const originalRow = document.getElementById('initialQueryContainer');
+        const clone = originalRow.cloneNode(true);
+        clone.id = 'queryContainer' + rowCount; // Adjust the ID of the cloned row
+
+        // Adjust IDs of all elements within the cloned row
+        clone.querySelectorAll('input, button').forEach(function (element) {
+            const currentId = element.id;
+            const newId = currentId.replace(/\d+$/, rowCount); // Replace the last digit(s) with the current rowCount
+            element.id = newId;
+        });
+
+        const minusButton = clone.querySelector('.queryButton');
+        minusButton.textContent = '➖'; // Replace plus emoji with minus emoji
+        minusButton.title = 'Remove query';
+        minusButton.addEventListener('click', function () { removeRow(clone); }); // Attach event listener to the minus button
+
+        document.getElementById('queryRowsContainer').appendChild(clone);
+        rowCount++; // Increment the row count
+    }
+
+    // Add event listener to the plus button
+    const plusButton = document.querySelector('.btn-light');
+    plusButton.addEventListener('click', TaddRow);
+});
+
+var URLModeHidden = document.getElementById("copyURLButton").hidden;
+
+if (URLModeHidden) {
+
+} else {
+    // Call the function initially to set form inputs from URL parameters
+    document.addEventListener('DOMContentLoaded', function () {
+        // Your code here
+        setFormInputsFromURL();
+
+        // Use event delegation to handle inputs dynamically added
+        document.body.addEventListener('input', function (event) {
+            if (event.target.matches('.form-control, .form-check-input')) {
+                updateURL(event);
+            }
+        });
+
+        document.body.addEventListener('click', function (event) {
+            if (event.target.matches('.queryButton')) {
+                updateURL(event);
+            }
+        });
+        
+
+        
+    });
+}

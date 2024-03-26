@@ -35,6 +35,32 @@
 
     #table-wrapper {
         padding: 20px;
+        max-height: 500px;
+        overflow: auto;
+    }
+
+    #dimensionalityReduction {
+        margin-right: 20px;
+    }
+
+    #plot-container {
+        max-height: 700px;
+        height: 0;
+    }
+
+    #deckgl {
+        position: relative !important;
+    }
+
+    #tooltip {
+        position: absolute;
+        opacity: 1000;
+        font-size: 20px;
+        border-radius: var(--bs-border-radius);
+        background-color: #f5f8ffcf;
+        outline: 2px solid #dfebff;
+        padding: 8px;
+        max-width: 500px;
     }
 
     @keyframes spin {
@@ -177,7 +203,7 @@
 
             </div>
         </div>
-        <div class="row justify-content-center"></div>
+
     </div>
 
 
@@ -189,8 +215,69 @@
         <div id="myGrid" class="ag-theme-quartz">
         </div>
     </div>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8 text-center">
+                <div>
+                    <hr />
+                    <h4>Dimensionality Reduction</h4>
+                    <p>Using a fast wasm implementation of Barnes-Hut tSNE (<a
+                            href="https://github.com/Lv-291/wasm-bhtsne" target="_blank">wasm-bhtSNE</a>).</p>
+
+                    <div class="d-flex flex-row">
+                        <button type="button" class="btn btn-md btn-primary mb-2 nav-button"
+                            id="dimensionalityReduction">🌌 Dim-Reduction</button>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="form-floating mb-2">
+                                    <input id="dimReductionIterations" class="form-control w-100" type="number" min="1"
+                                        value="1000" />
+                                    <label for="dimReductionIterations"># Iterations</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-floating mb-2">
+                                    <input id="scatterplotRadius" class="form-control w-100" type="number" min="1"
+                                        value="800" />
+                                    <label for="scatterplotRadius"># Radius</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-floating mb-2">
+                                    <input id="dimensionalityReductionSimilarityThreshold" class="form-control w-100"
+                                        type="number" min="0" max="1" step="0.01" value="0" />
+                                    <label for="dimensionalityReductionSimilarityThreshold"># Similarity
+                                        Threshold</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-floating mb-2">
+                                    <input id="colorBy" class="form-control w-100" type="text" value="None" />
+                                    <label for="colorBy">Color by</label>
+                                </div>
+                            </div>
+                            <div class="col-md-1 d-flex flex-column align-items-center justify-content-center">
+                                <label class="form-check-label" for="toggleOpacity" title="Similarity score determines point opacity">Opacity</label>
+                                <div class="form-check form-switch" title="Similarity score determines point opacity">
+                                    <input class="form-check-input activeToggle" type="checkbox" id="toggleOpacity" checked>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
 
+
+
+                </div>
+
+
+            </div>
+            <div id="plot-container">
+                <canvas id="deckgl"></canvas>
+            </div>
+        </div>
+    </div>
+    <div id="tooltip" class="tooltip"></div>
 </body>
 
 </html>

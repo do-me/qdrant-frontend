@@ -3,6 +3,15 @@ import { createGrid } from 'ag-grid-community';
 import * as XLSX from 'xlsx';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
+import { Deck } from '@deck.gl/core';
+import { ScatterplotLayer, LineLayer } from '@deck.gl/layers';
+import distinctColors from 'distinct-colors';
+
+const worker = new Worker(new URL('./worker.js', import.meta.url), {
+    type: 'module'
+});
+
+window.semanticWorker = worker;
 
 const loadingElement = document.getElementById("loading");
 const submitButton = document.getElementById("submit_button");
@@ -16,6 +25,7 @@ let loadedModelName = null;
 let quantizedFlag = true;
 let thisCollection;
 let lastCollection = "";
+let queryEmbedding;
 
 const special_vector = [] // A special vector can be hardcoded here, so that instead of calculating it with the model, this vector is used. Will be displayed bold. 
 
@@ -160,13 +170,10 @@ function addRow(queryData, rowNumber) {
     if (inputTextX.value === "special_vector") {
         // If the condition is met, apply italic text and grey background
         inputTextX.style.fontStyle = 'italic';
-        //event.target.style.backgroundColor = 'grey';
     } else {
         // If the condition is not met, remove italic text and grey background
         inputTextX.style.fontStyle = 'normal';
-        //event.target.style.backgroundColor = '';
     }
-
 
     clone.querySelector('.queryWeight').value = queryData.queryWeight || '';
     clone.querySelector('.activeToggle').checked = queryData.activeState;
@@ -239,10 +246,8 @@ async function searchPoints(collectionName, vectorData, filter, limit, offset, w
     thisCollection = document.getElementById("QdrantURL").value
     const response = await fetch(`${thisCollection}/points/search`, requestOptions);
     const data = await response.json();
-
     return data;
 }
-
 
 function getQueryTextsAndWeigths() {
     const queryContainers = document.querySelectorAll('.queryContainer');
@@ -258,8 +263,6 @@ function getQueryTextsAndWeigths() {
 
     const jsonObject = JSON.stringify(activeQueries);
 
-    console.log(jsonObject); // Logs the JSON string of active queries
-
     return jsonObject
 }
 
@@ -271,6 +274,7 @@ async function processInputText(inputText) {
     else {
         const output = await embedder(inputText, { pooling: 'mean', normalize: true });
         const vectorArray = Array.from(output["data"]);
+        queryEmbedding = vectorArray;
         return vectorArray;
     }
 }
@@ -295,14 +299,12 @@ async function processQueries() {
     const magnitude = Math.sqrt(weightedAverageVector.reduce((sum, val) => sum + val * val, 0));
     const normalizedWeightedAverageVector = weightedAverageVector.map(val => val / magnitude);
 
-    console.log(normalizedWeightedAverageVector); // Logs the normalized weighted average vector
     return normalizedWeightedAverageVector
 }
 
 // Define global variables for the grid API and options
 let gridApi;
 let gridOptions;
-
 
 async function sendRequest() {
     try {
@@ -315,23 +317,21 @@ async function sendRequest() {
     submitButton.setAttribute("disabled", "");
 
     let inputText = document.getElementsByClassName("inputText")[0].value.trim();
-    //const trimmedInputTexts = Array.from(document.getElementsByClassName("inputText")).map(input => input.value.trim());
 
     if (inputText !== "") {
         //let output = await embedder(inputText, { pooling: 'mean', normalize: true });
         const collectionName = "test_collection";
-        const vectorData = await processQueries();//Array.from(output["data"]);
+        const vectorData = await processQueries();
         const filter = {};
         const limit = parseInt(document.getElementById("QdrantLimit").value);
         const offset = 0;
         const withPayload = true;
-        const withVector = false;
+        const withVector = true;
         const scoreThreshold = null;
 
         try {
 
             searchResults = await searchPoints(collectionName, vectorData, filter, limit, offset, withPayload, withVector, scoreThreshold);
-            //console.log(searchResults);
 
             // Extract payload keys
             const payloadKeys = Object.keys(searchResults.result[0].payload);
@@ -371,7 +371,6 @@ async function sendRequest() {
                 })),
             ];
 
-
             // Check if the grid has already been initialized
             if (gridApi && thisCollection === lastCollection) {
                 // If the grid is already initialized, update the row data
@@ -379,8 +378,6 @@ async function sendRequest() {
             } else {
 
                 try {
-                    //gridOptions.api.destroy()
-                    //document.getElementById("myGrid").innerHTML = "";
                     if (thisCollection !== lastCollection) {
                         // update column headers if needed
                         gridApi.updateGridOptions({ columnDefs: columnDefs })
@@ -438,10 +435,7 @@ async function sendRequest() {
                 filterTextBox._listenerInitialized = true;
 
             }
-
-
             lastCollection = thisCollection
-
 
         } catch (error) {
             console.error(error);
@@ -534,7 +528,6 @@ async function exportData(data, format) {
         URL.revokeObjectURL(csvUrl);
         document.body.removeChild(link);
 
-
     } else if (format === 'json') {
         // Convert JSON to string
         const jsonString = JSON.stringify(jsonData, null, 2);
@@ -562,17 +555,27 @@ async function exportData(data, format) {
     }
 }
 
+async function tsne() {
+    semanticWorker.postMessage({
+        type: "tsne",
+        data: {
+            "queryEmbedding": queryEmbedding,
+            "searchResults": searchResults,
+            "iterations": document.getElementById("dimReductionIterations").value,
+            "dimensionalityReductionSimilarityThreshold": document.getElementById("dimensionalityReductionSimilarityThreshold").value,
+            "colorBy": document.getElementById("colorBy").value
+        }
+
+    });
+}
+
 document.getElementById('copyURLButton').addEventListener('click', function () {
     var urlToCopy = window.location.href;
-
     navigator.clipboard.writeText(urlToCopy)
         .then(function () {
-            console.log('URL copied to clipboard successfully: ' + urlToCopy);
-            // You can also show a success message here if needed
         })
         .catch(function (err) {
             console.error('Failed to copy URL to clipboard: ', err);
-            // You can also show an error message here if needed
         });
 });
 
@@ -644,6 +647,180 @@ if (URLModeHidden) {
                 updateURL(event);
             }
         });
-
     });
 }
+
+document.getElementById('dimensionalityReduction').addEventListener('click', function (event) {
+    tsne();
+});
+
+const plotContainer = document.getElementById("plot-container");
+let deckgl;
+export async function loadScatterplot(data, similarityOpacity) {
+
+    removeScatterplot();
+    // Find the minimum and maximum similarity values, x values, and y values in the data array
+    const minSimilarity = Math.min(...data.map(item => item.similarity));
+    const maxSimilarity = Math.max(...data.map(item => item.similarity));
+
+    const minX = Math.min(...data.map(item => item.x));
+    const maxX = Math.max(...data.map(item => item.x));
+
+    const minY = Math.min(...data.map(item => item.y));
+    const maxY = Math.max(...data.map(item => item.y));
+
+    // If needed, color by a unique colorClass value 
+    // Count distinct colorClasses and generate unique colors
+    const colorClassSet = new Set(data.map(item => item.colorClass));
+    const distinctColorClasses = Array.from(colorClassSet);
+
+    const distinctColorClassesLength = distinctColorClasses.length
+
+    if (distinctColorClassesLength == 1) {
+        data.forEach(item => {
+            item.distinctColor = [13,10,253,1]
+        });
+    }
+
+    else {
+        const palette = distinctColors({ "count": distinctColorClassesLength })
+
+        // Add distinctColor node to each object in data
+        data.forEach(item => {
+            const colorClassIndex = distinctColorClasses.indexOf(item.colorClass);
+            item.distinctColor = palette[colorClassIndex]._rgb
+        });
+    }
+
+    data = data.map(item => {
+        // Normalize similarity values to the range [0, 1]
+        let alpha;
+        // Normalize x and y coordinates to the range [0, 1]
+        const normalizedX = (item.x - minX) / (maxX - minX);
+        const normalizedY = (item.y - minY) / (maxY - minY);
+        if (similarityOpacity) {
+            const normalizedSimilarity = (item.similarity - minSimilarity) / (maxSimilarity - minSimilarity);
+
+            alpha = Math.floor(Math.min(1, Math.max(0, normalizedSimilarity)) * 255);
+        }
+        else {
+            alpha = 255
+        }
+        // Map the alpha value to the entire opacity spectrum
+        const color = [...item.distinctColor.slice(0, -1), alpha];
+        //console.log("COLOR:", color)
+        return {
+            coordinates: [normalizedX, normalizedY],
+            color: color,
+            similarity: item.similarity,
+            label: item.label,
+        };
+    });
+
+    // Calculate the bounding box of the data
+    const bounds = data.reduce(
+        (acc, point) => ({
+            minX: Math.min(acc.minX, point.coordinates[0]),
+            minY: Math.min(acc.minY, point.coordinates[1]),
+            maxX: Math.max(acc.maxX, point.coordinates[0]),
+            maxY: Math.max(acc.maxY, point.coordinates[1]),
+        }),
+        { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+    );
+
+    deckgl = new Deck({
+        canvas: 'deckgl',
+        container: 'plot-container',
+        initialViewState: {
+            latitude: (bounds.minY + bounds.maxY) / 2,
+            longitude: (bounds.minX + bounds.maxX) / 2,
+            zoom: 9
+        },
+        controller: true,
+        pickingRadius: 25,
+        layers: [
+            // Add a new LineLayer for the coordinate system
+            /*new LineLayer({
+                id: 'coordinate-system',
+                data: generateGridData(20),
+                getSourcePosition: d => d.sourcePosition,
+                getTargetPosition: d => d.targetPosition,
+                getColor: d => d.color,
+                getWidth: 1,
+                pickable: false
+            }),
+            */
+            // ScatterplotLayer with all points added right away
+            new ScatterplotLayer({
+                id: 'scatterplot',
+                data: data,
+                getPosition: d => d.coordinates,
+                getRadius: parseInt(document.getElementById("scatterplotRadius").value), // Adjust the radius to fit the new range
+                getFillColor: d => d.color,
+                pickable: true, // Enable picking for on-hover interaction
+                onHover: info => {
+                    const tooltip = document.getElementById('tooltip');
+
+                    if (info.object) {
+                        const canvas = document.getElementById('deckgl');
+                        const rect = canvas.getBoundingClientRect();
+
+                        // Calculate the correct position by subtracting the canvas offset and adding the scroll position
+                        const left = window.scrollX + info.x + rect.left + 30;
+                        const top = window.scrollY + info.y + rect.top + -50;
+
+                        tooltip.innerHTML = `${info.object.label} <br>Similarity: ${info.object.similarity.toFixed(2)}`;
+                        tooltip.style.left = `${left}px`;
+                        tooltip.style.top = `${top}px`;
+                        tooltip.style.display = 'block';
+                    } else {
+                        tooltip.style.display = 'none';
+                    }
+                },
+                onClick: info => {
+                    const tooltip = document.getElementById('tooltip');
+
+                    if (info.object) {
+                        const canvas = document.getElementById('deckgl');
+                        const rect = canvas.getBoundingClientRect();
+
+                        // Calculate the correct position by subtracting the canvas offset and adding the scroll position
+                        const left = window.scrollX + info.x + rect.left + 30;
+                        const top = window.scrollY + info.y + rect.top + -50;
+
+                        tooltip.innerHTML = `${info.object.label} <br>Similarity: ${info.object.similarity.toFixed(2)}`;
+                        tooltip.style.left = `${left}px`;
+                        tooltip.style.top = `${top}px`;
+                        tooltip.style.display = 'block';
+                    } else {
+                        tooltip.style.display = 'none';
+                    }
+                }
+
+            })
+        ]
+    });
+
+    plotContainer.style.height = "700px";
+}
+
+export function removeScatterplot() {
+    if (deckgl) {
+        deckgl.finalize();
+        deckgl = null;
+    }
+}
+
+worker.onmessage = function (event) {
+    const message = event.data;
+    let resolve;
+
+    switch (message.type) {
+        case 'tsne':
+            loadScatterplot(message.plotDataArray, document.getElementById("toggleOpacity").checked);
+
+            break
+        default:
+            console.error('Unknown message type: ' + message.type);
+    }
+};

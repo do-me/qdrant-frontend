@@ -14,6 +14,11 @@
     "@xenova/transformers": "^2.15.0",
     "ag-grid-community": "^31.1.0",
     "bootstrap": "^5.3.3",
+    "deck.gl": "^8.9.35",
+    "distinct-colors": "^3.0.0",
+    "marked": "^12.0.1",
+    "pako": "^2.1.0",
+    "wasm-bhtsne": "^0.3.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
